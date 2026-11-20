@@ -23,8 +23,15 @@ const QRCode = require('qrcode');
 const PORT = parseInt(process.argv[2], 10) || 8443;
 // Plain HTTP on localhost only, for the OBS browser source (its CEF rejects self-signed certs).
 const OBS_PORT = parseInt(process.argv[3], 10) || 8080;
-// Where key.pem/cert.pem live. IPHONE_CAM_DATA_DIR lets tests keep them out of the repo.
-const DATA_DIR = process.env.IPHONE_CAM_DATA_DIR || __dirname;
+// True when running as the packaged single executable (Node SEA), e.g. iphone-cam.exe.
+const IS_SEA = (() => {
+  try { return require('node:sea').isSea(); } catch (e) { return false; }
+})();
+// How the user starts the app, for console hints.
+const APP_CMD = IS_SEA ? path.basename(process.execPath) : 'node iphone-cam.js';
+// Where key.pem/cert.pem live: next to the .exe when packaged, next to this script otherwise.
+// IPHONE_CAM_DATA_DIR overrides both (used by tests to keep them out of the repo).
+const DATA_DIR = process.env.IPHONE_CAM_DATA_DIR || (IS_SEA ? path.dirname(process.execPath) : __dirname);
 const KEY = path.join(DATA_DIR, 'key.pem');
 const CERT = path.join(DATA_DIR, 'cert.pem');
 // Apple rejects TLS server certificates valid for more than 825 days.
@@ -422,12 +429,24 @@ function handler(req, res) {
     res.end('No encontrado');
 }
 
+// Prints a fatal error and exits. A double-clicked .exe would close its console
+// window instantly, so in that case wait for Enter so the message can be read.
+let exiting = false;
+function fatal(message) {
+  if (exiting) return;
+  exiting = true;
+  console.error(message);
+  if (!IS_SEA || !process.stdin.isTTY) process.exit(1);
+  console.error('Presiona Enter para cerrar esta ventana.');
+  process.stdin.resume();
+  process.stdin.once('data', () => process.exit(1));
+}
+
 function onListenError(port) {
   return (e) => {
-    if (e.code !== 'EADDRINUSE') throw e;
-    console.error('\nEl puerto ' + port + ' ya esta en uso (¿quedo otra ventana con iphone-cam abierta?).\n' +
-      'Cierrala o usa otros puertos:  node iphone-cam.js 9443 9080\n');
-    process.exit(1);
+    if (e.code !== 'EADDRINUSE') return fatal('\nNo se pudo abrir el puerto ' + port + ': ' + e.message + '\n');
+    fatal('\nEl puerto ' + port + ' ya esta en uso (¿quedo otra ventana con iphone-cam abierta?).\n' +
+      'Cierrala o usa otros puertos:  ' + APP_CMD + ' 9443 9080\n');
   };
 }
 
@@ -474,8 +493,7 @@ async function main() {
   try {
     await ensureCertificate();
   } catch (e) {
-    console.error('\nNo se pudo generar el certificado en ' + DATA_DIR + ': ' + e.message + '\n');
-    process.exit(1);
+    return fatal('\nNo se pudo generar el certificado en ' + DATA_DIR + ': ' + e.message + '\n');
   }
 
   http.createServer(handler).on('error', onListenError(OBS_PORT)).listen(OBS_PORT, '127.0.0.1');
@@ -485,4 +503,4 @@ async function main() {
   server.listen(PORT, '0.0.0.0', printBanner);
 }
 
-main();
+main().catch((e) => fatal('\nError inesperado: ' + (e && e.stack || e) + '\n'));

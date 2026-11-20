@@ -4,3 +4,10 @@
 node_modules/
 .DS_Store
 Thumbs.db
+
+# Build output (npm run build)
+dist/
+
+# Local agent/workflow notes
+odd/
+.atl/
