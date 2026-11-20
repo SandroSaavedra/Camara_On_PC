@@ -18,6 +18,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const selfsigned = require('selfsigned');
+const QRCode = require('qrcode');
 
 const PORT = parseInt(process.argv[2], 10) || 8443;
 // Plain HTTP on localhost only, for the OBS browser source (its CEF rejects self-signed certs).
@@ -430,7 +431,32 @@ function onListenError(port) {
   };
 }
 
-function printBanner() {
+// Lower rank = more likely the WiFi address the iPhone can reach.
+function lanRank(ip) {
+  if (ip.startsWith('192.168.')) return 0;
+  if (ip.startsWith('10.')) return 1;
+  const m = /^172\.(\d+)\./.exec(ip);
+  if (m && +m[1] >= 16 && +m[1] <= 31) return 2;
+  return 3;
+}
+
+// Link-local (169.254.*) addresses are skipped: the iPhone can never reach them.
+function primaryIp(ips) {
+  return ips.filter((ip) => !ip.startsWith('169.254.')).sort((a, b) => lanRank(a) - lanRank(b))[0];
+}
+
+// Best effort: if the QR cannot be rendered, the text URLs above are enough.
+async function printQr(url) {
+  try {
+    const qr = await QRCode.toString(url, { type: 'terminal', small: true });
+    console.log('\n' + qr);
+    console.log('  Escanea este codigo con la camara del iPhone: ' + url);
+  } catch (e) {
+    // Keep running without the QR code.
+  }
+}
+
+async function printBanner() {
   const ips = [];
   for (const list of Object.values(os.networkInterfaces()))
     for (const i of list || []) if (i.family === 'IPv4' && !i.internal) ips.push(i.address);
@@ -438,6 +464,8 @@ function printBanner() {
   console.log('  Visor (en este PC):   https://localhost:' + PORT + '/');
   ips.forEach((ip) => console.log('  Camara (en el iPhone): https://' + ip + ':' + PORT + '/cam'));
   console.log('  OBS (Fuente de navegador, 1080x1920): http://localhost:' + OBS_PORT + '/obs');
+  const ip = primaryIp(ips);
+  if (ip) await printQr('https://' + ip + ':' + PORT + '/cam');
   console.log('\nAmbos navegadores mostraran un aviso de certificado: acepta y continua.');
   console.log('Ctrl+C para detener.\n');
 }

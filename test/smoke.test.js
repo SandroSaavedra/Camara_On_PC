@@ -101,6 +101,18 @@ test('serves the viewer and camera pages over HTTPS', async () => {
   assert.equal(await get(https, 'https://localhost:' + httpsPort + '/cam'), 200);
 });
 
+test('prints a QR code for the iPhone camera URL', (t) => {
+  const lanIps = Object.values(os.networkInterfaces()).flat()
+    .filter((i) => i && i.family === 'IPv4' && !i.internal && !i.address.startsWith('169.254.'));
+  if (!lanIps.length) return t.skip('no LAN IPv4 address on this machine');
+
+  const line = /Escanea este codigo con la camara del iPhone: (https:\/\/[\d.]+:(\d+)\/cam)/.exec(output);
+  assert.ok(line, 'QR intro line missing. Output:\n' + output);
+  assert.equal(Number(line[2]), httpsPort);
+  assert.ok(lanIps.some((i) => line[1].includes('//' + i.address + ':')), 'QR URL is not a LAN address');
+  assert.match(output, /[▀▄█]/, 'QR block characters missing');
+});
+
 test('serves the OBS page over plain HTTP on localhost', async () => {
   assert.equal(await get(http, 'http://127.0.0.1:' + httpPort + '/obs'), 200);
 });
