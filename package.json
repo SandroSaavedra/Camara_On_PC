@@ -1,0 +1,23 @@
+{
+  "name": "iphone-cam",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Use the iPhone camera as a PC camera (DroidCam style) over WebRTC on the local network.",
+  "main": "iphone-cam.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node iphone-cam.js",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SandroSaavedra/Camara_On_PC.git"
+  },
+  "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "selfsigned": "^5.5.0"
+  }
+}

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /*
- * iPhone Cam - visor de camara tipo DroidCam, sin dependencias.
+ * iPhone Cam - visor de camara tipo DroidCam.
  *
- * Uso:
- *   node iphone-cam.js            (puerto 8443 por defecto)
- *   node iphone-cam.js 9000       (otro puerto)
+ * Uso (tras npm install):
+ *   node iphone-cam.js              (puertos 8443 y 8080 por defecto)
+ *   node iphone-cam.js 9443 9080    (otros puertos: HTTPS y OBS)
  *
  * En el PC abre   https://localhost:8443/
  * En el iPhone    https://<IP-del-PC>:8443/cam   (Safari, misma red WiFi)
@@ -17,52 +17,41 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execSync } = require('child_process');
+const selfsigned = require('selfsigned');
 
 const PORT = parseInt(process.argv[2], 10) || 8443;
 // Plain HTTP on localhost only, for the OBS browser source (its CEF rejects self-signed certs).
 const OBS_PORT = parseInt(process.argv[3], 10) || 8080;
-const KEY = path.join(__dirname, 'key.pem');
-const CERT = path.join(__dirname, 'cert.pem');
+// Where key.pem/cert.pem live. IPHONE_CAM_DATA_DIR lets tests keep them out of the repo.
+const DATA_DIR = process.env.IPHONE_CAM_DATA_DIR || __dirname;
+const KEY = path.join(DATA_DIR, 'key.pem');
+const CERT = path.join(DATA_DIR, 'cert.pem');
+// Apple rejects TLS server certificates valid for more than 825 days.
+const CERT_DAYS = 825;
 
 // ---------- Certificado autofirmado (iOS exige HTTPS para usar la camara) ----------
-// On Windows, openssl usually ships with Git for Windows but is not on the cmd PATH.
-function findOpenssl() {
-  const candidates = ['openssl'];
-  if (process.platform === 'win32') {
-    for (const base of [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA + '\\Programs'])
-      if (base) candidates.push(
-        path.join(base, 'Git', 'usr', 'bin', 'openssl.exe'),
-        path.join(base, 'Git', 'mingw64', 'bin', 'openssl.exe')
-      );
-  }
-  return candidates.find((c) => {
-    try { execSync('"' + c + '" version', { stdio: 'ignore' }); return true; } catch (e) { return false; }
+// Generated in pure JS (WebCrypto via selfsigned), so openssl is not required.
+async function ensureCertificate() {
+  if (fs.existsSync(KEY) && fs.existsSync(CERT)) return;
+  console.log('Generando certificado autofirmado...');
+  const notBeforeDate = new Date();
+  const notAfterDate = new Date(notBeforeDate.getTime() + CERT_DAYS * 24 * 60 * 60 * 1000);
+  const pems = await selfsigned.generate([{ name: 'commonName', value: 'iphone-cam' }], {
+    keyType: 'rsa',
+    keySize: 2048,
+    algorithm: 'sha256',
+    notBeforeDate,
+    notAfterDate,
+    extensions: [
+      { name: 'basicConstraints', cA: false },
+      { name: 'keyUsage', digitalSignature: true, keyEncipherment: true, critical: true },
+      { name: 'extKeyUsage', serverAuth: true },
+      { name: 'subjectAltName', altNames: [{ type: 2, value: 'localhost' }] },
+    ],
   });
-}
-
-// Minimal config so a broken OPENSSL_CONF env var (e.g. left by other installers) cannot break generation.
-const OPENSSL_CNF = path.join(os.tmpdir(), 'iphone-cam-openssl.cnf');
-
-if (!fs.existsSync(KEY) || !fs.existsSync(CERT)) {
-  try {
-    console.log('Generando certificado autofirmado con openssl...');
-    const openssl = findOpenssl();
-    if (!openssl) throw new Error('openssl not found');
-    fs.writeFileSync(OPENSSL_CNF, '[req]\ndistinguished_name = dn\n[dn]\n');
-    execSync(
-      '"' + openssl + '" req -x509 -newkey rsa:2048 -nodes -keyout "' + KEY + '" -out "' + CERT +
-      '" -days 825 -subj "/CN=iphone-cam"',
-      { stdio: 'inherit', env: Object.assign({}, process.env, { MSYS_NO_PATHCONV: '1', OPENSSL_CONF: OPENSSL_CNF }) }
-    );
-  } catch (e) {
-    console.error(
-      '\nNo se pudo ejecutar openssl. Genera el certificado manualmente en esta carpeta:\n\n' +
-      '  openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 825 -subj "/CN=iphone-cam"\n\n' +
-      'En Windows, openssl viene con Git for Windows (usa "Git Bash").\n'
-    );
-    process.exit(1);
-  }
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(KEY, pems.private, { mode: 0o600 });
+  fs.writeFileSync(CERT, pems.cert);
 }
 
 // ---------- Senalizacion: un canal SSE por rol ----------
@@ -441,12 +430,7 @@ function onListenError(port) {
   };
 }
 
-http.createServer(handler).on('error', onListenError(OBS_PORT)).listen(OBS_PORT, '127.0.0.1');
-
-const server = https.createServer({ key: fs.readFileSync(KEY), cert: fs.readFileSync(CERT) }, handler);
-server.on('error', onListenError(PORT));
-
-server.listen(PORT, '0.0.0.0', () => {
+function printBanner() {
   const ips = [];
   for (const list of Object.values(os.networkInterfaces()))
     for (const i of list || []) if (i.family === 'IPv4' && !i.internal) ips.push(i.address);
@@ -456,4 +440,21 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('  OBS (Fuente de navegador, 1080x1920): http://localhost:' + OBS_PORT + '/obs');
   console.log('\nAmbos navegadores mostraran un aviso de certificado: acepta y continua.');
   console.log('Ctrl+C para detener.\n');
-});
+}
+
+async function main() {
+  try {
+    await ensureCertificate();
+  } catch (e) {
+    console.error('\nNo se pudo generar el certificado en ' + DATA_DIR + ': ' + e.message + '\n');
+    process.exit(1);
+  }
+
+  http.createServer(handler).on('error', onListenError(OBS_PORT)).listen(OBS_PORT, '127.0.0.1');
+
+  const server = https.createServer({ key: fs.readFileSync(KEY), cert: fs.readFileSync(CERT) }, handler);
+  server.on('error', onListenError(PORT));
+  server.listen(PORT, '0.0.0.0', printBanner);
+}
+
+main();
