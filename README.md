@@ -38,7 +38,7 @@ Después sigue los pasos 2 a 4 de arriba.
 
 | Qué | Detalle |
 |-----|---------|
-| PC | Windows con `iphone-cam.exe`, o Node.js 20+ para ejecutarlo desde el código. |
+| PC | Windows de 64 bits con `iphone-cam.exe` (no funciona en Mac ni Linux), o Node.js 20+ para ejecutarlo desde el código en cualquier sistema. |
 | Red | La PC y el iPhone en la misma red WiFi. |
 | Firewall | Permite el acceso en **redes privadas** cuando Windows lo pregunte. |
 
@@ -86,6 +86,10 @@ Otra opción: transmitir directamente desde OBS con la clave de transmisión de 
 |---------|----------------|-----------|
 | La consola del .exe muestra un error y pide **Enter** | No pudo arrancar (por ejemplo, un puerto ocupado) | Lee el mensaje, corrige la causa y vuelve a abrirlo. |
 | Windows no deja abrir el .exe | SmartScreen bloquea programas sin firma | **Más información → Ejecutar de todas formas**. |
+| El antivirus bloquea o borra el .exe | Falso positivo frecuente en ejecutables sin firma | Agrega una excepción para el archivo en el antivirus. |
+| El .exe falla al arrancar en una carpeta como `Archivos de programa` | Necesita crear el certificado junto al .exe y esa carpeta no permite escribir | Muévelo a Descargas, Escritorio o una carpeta propia. |
+| El iPhone no abre la página (se queda cargando) | Se canceló el aviso del firewall, o Windows tiene la red WiFi como **Pública** | Permite el acceso en el firewall y cambia la red a **Privada** (Configuración → Red e Internet → propiedades de la red). |
+| El iPhone no abre la página aunque el firewall está bien | Red de invitados o router con "aislamiento de clientes", que impide que los equipos se vean entre sí | Conecta ambos a la red WiFi principal. |
 | `El puerto 8443 ya esta en uso` | Quedó otra instancia abierta | Ciérrala o usa otros puertos. |
 | La fuente de OBS no muestra nada | Puerto equivocado o iPhone desconectado | La URL debe ser `http://localhost:8080/obs` (no 8443). En el iPhone pulsa **Iniciar cámara**. |
 | `[-] cam desconectado` en la consola | El iPhone bloqueó la pantalla o se cambió de app | Mantén Safari en primer plano y el iPhone cargando. |
