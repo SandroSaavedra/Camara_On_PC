@@ -1,0 +1,6 @@
+# Self-signed certificate generated on first run (private key must never be committed)
+*.pem
+
+node_modules/
+.DS_Store
+Thumbs.db
